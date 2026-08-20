@@ -105,6 +105,7 @@ npm run build && npm run build:web && npm start   # Produktionsmodus
 | Playlist zeigt „nur Metadaten" | Fremde (nur gefolgte) Playlists liefern seit Februar 2026 keine Tracklisten mehr. Blockshuffle geht nur mit eigenen oder kollaborativen Playlists. |
 | Reihenfolge stimmt nicht mit der Vorschau überein | Spotifys eigener Shuffle wurde wieder aktiviert (Warnung in der Statusleiste) — in der Spotify-App ausschalten. |
 | Nach Neustart erneut Login nötig | `/config`-Volume nicht persistent gemountet — die SQLite-Datenbank liegt dort. |
+| `buildx ist nicht installiert` beim Bauen | Ohne BuildKit/buildx mit dem Legacy-Builder bauen: `DOCKER_BUILDKIT=0 docker compose up -d --build` — oder `DOCKER_BUILDKIT=0 docker build -t spotify-blockshuffle .` und danach `docker compose up -d --no-build`. Das Dockerfile braucht kein BuildKit. |
 | HTTP 429 im Log | Rate-Limit; die App wartet gemäß `Retry-After` automatisch und wiederholt den Request. |
 
 ## Bewusst nicht enthalten

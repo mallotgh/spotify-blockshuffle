@@ -1,6 +1,7 @@
 services:
   blockshuffle:
     build: .
+    image: spotify-blockshuffle:latest
     container_name: spotify-blockshuffle
     ports:
       - "8973:8973"
