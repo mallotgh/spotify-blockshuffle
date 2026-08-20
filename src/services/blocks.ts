@@ -4,7 +4,7 @@ import { ApiError } from '../errors.js';
 
 /**
  * Invarianten (werden hier serverseitig erzwungen):
- *  - Ein Track gehört pro Playlist zu höchstens einem Block.
+ *  - Ein Track darf zu mehreren Blöcken gehören (er spielt dann einmal pro Block).
  *  - Ein Block hat mindestens 2 Tracks; schrumpft er auf einen, wird er aufgelöst.
  *  - block_items.position ist pro Block lückenlos ab 0.
  */
@@ -38,17 +38,6 @@ function playlistPosition(db: DB, playlistId: string): Map<string, number> {
     .prepare('SELECT track_id, MIN(position) AS pos FROM playlist_items WHERE playlist_id = ? GROUP BY track_id')
     .all(playlistId) as { track_id: string; pos: number }[];
   return new Map(rows.map((r) => [r.track_id, r.pos]));
-}
-
-/** Liefert für jeden Track der Playlist den Block, in dem er steckt. */
-function blockMembership(db: DB, playlistId: string): Map<string, string> {
-  const rows = db
-    .prepare(
-      `SELECT bi.track_id, bi.block_id FROM block_items bi
-       JOIN blocks b ON b.id = bi.block_id WHERE b.playlist_id = ?`,
-    )
-    .all(playlistId) as { track_id: string; block_id: string }[];
-  return new Map(rows.map((r) => [r.track_id, r.block_id]));
 }
 
 export function getBlocks(db: DB, playlistId: string): BlockWithItems[] {
@@ -93,40 +82,6 @@ function nextColor(db: DB, playlistId: string): string {
   return BLOCK_COLORS.find((c) => !used.includes(c)) ?? BLOCK_COLORS[used.length % BLOCK_COLORS.length]!;
 }
 
-/**
- * Wirft 409 mit Konfliktdetails, wenn Tracks bereits in anderen Blöcken stecken.
- * Mit force=true werden sie stattdessen aus ihren bisherigen Blöcken entfernt
- * (explizite Bestätigung durch den Nutzer).
- */
-function resolveConflicts(
-  db: DB,
-  playlistId: string,
-  trackIds: string[],
-  ignoreBlockId: string | null,
-  force: boolean,
-): void {
-  const membership = blockMembership(db, playlistId);
-  const conflicts = trackIds
-    .map((t) => ({ trackId: t, blockId: membership.get(t) }))
-    .filter((c): c is { trackId: string; blockId: string } => !!c.blockId && c.blockId !== ignoreBlockId);
-  if (conflicts.length === 0) return;
-  if (!force) {
-    throw new ApiError(
-      409,
-      'track_in_other_block',
-      'Mindestens ein Track gehört bereits zu einem anderen Block.',
-      { conflicts },
-    );
-  }
-  // Direkt aus den Quellblöcken lösen und diese erst danach aufräumen —
-  // ein Quellblock kann durch mehrere Entnahmen in einem Zug verschwinden.
-  const del = db.prepare('DELETE FROM block_items WHERE block_id = ? AND track_id = ?');
-  for (const c of conflicts) del.run(c.blockId, c.trackId);
-  for (const blockId of new Set(conflicts.map((c) => c.blockId))) {
-    cleanupBlock(db, blockId);
-  }
-}
-
 /** Löst einen Block unter 2 Tracks auf, sonst Positionen lückenlos ab 0 halten. */
 function cleanupBlock(db: DB, blockId: string): { dissolved: boolean } {
   const rest = db
@@ -145,7 +100,7 @@ export function createBlock(
   db: DB,
   playlistId: string,
   trackIds: string[],
-  opts: { name?: string; color?: string; force?: boolean } = {},
+  opts: { name?: string; color?: string } = {},
 ): BlockWithItems {
   const unique = [...new Set(trackIds)];
   if (unique.length < 2) {
@@ -158,7 +113,6 @@ export function createBlock(
   }
 
   return db.transaction(() => {
-    resolveConflicts(db, playlistId, unique, null, opts.force ?? false);
     // Initialreihenfolge = Playlist-Reihenfolge
     const pos = playlistPosition(db, playlistId);
     const ordered = [...unique].sort((a, b) => (pos.get(a) ?? 0) - (pos.get(b) ?? 0));
@@ -189,7 +143,6 @@ export function setBlockItems(
   db: DB,
   blockId: string,
   trackIds: string[],
-  opts: { force?: boolean } = {},
 ): BlockWithItems {
   const block = getBlock(db, blockId);
   const unique = [...new Set(trackIds)];
@@ -210,8 +163,6 @@ export function setBlockItems(
   }
 
   return db.transaction(() => {
-    const added = unique.filter((t) => !current.has(t));
-    resolveConflicts(db, block.playlist_id, added, blockId, opts.force ?? false);
     db.prepare('DELETE FROM block_items WHERE block_id = ?').run(blockId);
     const insert = db.prepare('INSERT INTO block_items (block_id, track_id, position) VALUES (?, ?, ?)');
     unique.forEach((t, i) => insert.run(blockId, t, i));
@@ -239,7 +190,6 @@ export function addTrackToBlock(
   db: DB,
   blockId: string,
   trackId: string,
-  opts: { force?: boolean } = {},
 ): BlockWithItems {
   const block = getBlock(db, blockId);
   const inPlaylist = playlistTrackIds(db, block.playlist_id);
@@ -247,7 +197,6 @@ export function addTrackToBlock(
     throw new ApiError(400, 'track_not_in_playlist', 'Track gehört nicht zu dieser Playlist.');
   }
   return db.transaction(() => {
-    resolveConflicts(db, block.playlist_id, [trackId], blockId, opts.force ?? false);
     const max = (
       db.prepare('SELECT COALESCE(MAX(position), -1) AS m FROM block_items WHERE block_id = ?').get(blockId) as {
         m: number;

@@ -89,6 +89,26 @@ describe('blockShuffle', () => {
     expect([...result.order].sort()).toEqual(['x', 'x', 'y']);
   });
 
+  it('ein Track in zwei Blöcken spielt einmal pro Block', () => {
+    const result = blockShuffle(
+      {
+        playlistOrder: ['a', 'b', 'c', 'd'],
+        blocks: [
+          { id: 'b1', name: 'B1', trackIds: ['a', 'b'] },
+          { id: 'b2', name: 'B2', trackIds: ['b', 'c'] },
+        ],
+      },
+      's',
+    );
+    // b steckt in beiden Blöcken -> insgesamt 5 Abspielpositionen
+    expect(result.order).toHaveLength(5);
+    expect([...result.order].sort()).toEqual(['a', 'b', 'b', 'c', 'd']);
+    expect(result.units.find((u) => u.blockId === 'b1')!.trackIds).toEqual(['a', 'b']);
+    expect(result.units.find((u) => u.blockId === 'b2')!.trackIds).toEqual(['b', 'c']);
+    // d bleibt als einzige Einzel-Einheit übrig
+    expect(result.units.filter((u) => u.blockId === null).flatMap((u) => u.trackIds)).toEqual(['d']);
+  });
+
   it('ein Block konsumiert nur das erste Vorkommen eines doppelten Tracks', () => {
     const result = blockShuffle(
       { playlistOrder: ['a', 'b', 'a', 'c'], blocks: [{ id: 'b1', name: 'B', trackIds: ['a', 'c'] }] },

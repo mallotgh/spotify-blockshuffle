@@ -8,7 +8,7 @@ Da die Spotify-API keinen Einfluss auf den internen Shuffle-Algorithmus erlaubt,
 
 ## Funktionsweise
 
-- **Blöcke** werden pro Playlist definiert und in SQLite gespeichert. Ein Track gehört pro Playlist zu höchstens einem Block; Blöcke unter 2 Tracks werden automatisch aufgelöst.
+- **Blöcke** werden pro Playlist definiert und in SQLite gespeichert. Ein Track darf zu mehreren Blöcken gehören — beim Shuffle spielt er dann einmal pro Block. Blöcke unter 2 Tracks werden automatisch aufgelöst.
 - **Shuffle:** Jeder Block ist eine Einheit, jeder blockfreie Track eine Einheit der Länge 1. Die Einheitenliste wird mit einem seedbaren RNG gemischt. Der Seed wird angezeigt und kann erneut eingegeben werden, um eine Reihenfolge exakt zu reproduzieren.
 - **Wiedergabe:**
   - **Weg A (Shadow-Playlist, Standard ab 91 Tracks):** Die App pflegt eine private Playlist `🔀 <Name> (Blockshuffle)` pro Original-Playlist und ersetzt deren Inhalt mit der berechneten Reihenfolge. Keine Längenbegrenzung, freies Vor-/Zurückspringen in der Spotify-App.

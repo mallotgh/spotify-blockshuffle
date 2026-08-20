@@ -57,7 +57,7 @@ export const api = {
   playlistDetail: (id: string, refresh = false) =>
     request<PlaylistDetail>(`/api/playlists/${id}${refresh ? '?refresh=1' : ''}`),
 
-  createBlock: (playlistId: string, body: { trackIds: string[]; name?: string; force?: boolean }) =>
+  createBlock: (playlistId: string, body: { trackIds: string[]; name?: string }) =>
     request<{ detail: PlaylistDetail }>(`/api/playlists/${playlistId}/blocks`, {
       method: 'POST',
       body: JSON.stringify(body),
@@ -67,15 +67,15 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ name }),
     }),
-  setBlockItems: (blockId: string, trackIds: string[], force = false) =>
+  setBlockItems: (blockId: string, trackIds: string[]) =>
     request<{ detail: PlaylistDetail }>(`/api/blocks/${blockId}/items`, {
       method: 'PUT',
-      body: JSON.stringify({ trackIds, force }),
+      body: JSON.stringify({ trackIds }),
     }),
-  addTrackToBlock: (blockId: string, trackId: string, force = false) =>
+  addTrackToBlock: (blockId: string, trackId: string) =>
     request<{ detail: PlaylistDetail }>(`/api/blocks/${blockId}/items`, {
       method: 'POST',
-      body: JSON.stringify({ trackId, force }),
+      body: JSON.stringify({ trackId }),
     }),
   removeTrackFromBlock: (blockId: string, trackId: string) =>
     request<{ dissolved: boolean; detail: PlaylistDetail }>(

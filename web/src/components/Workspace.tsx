@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, ApiError } from '../lib/api';
+import { api } from '../lib/api';
 import { useToast, errorText } from '../lib/toast';
 import type { Block, PlaylistDetail, PlaylistTrack } from '../types';
 import BlockGroup from './BlockGroup';
@@ -45,14 +45,27 @@ export default function Workspace({ playlistId }: Props) {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const selectableIds = useMemo(
-    () =>
-      (detail.data?.tracks ?? [])
-        .filter((t) => t.blockId === null)
-        .map((t) => t.id)
-        .filter((id, i, arr) => arr.indexOf(id) === i),
-    [detail.data],
-  );
+  // Sichtbare Reihenfolge aller Tracks (lose Zeilen + Blockgruppen an ihrer
+  // ersten Position) — Grundlage für Shift-Klick-Bereiche über alles hinweg.
+  const selectableIds = useMemo(() => {
+    const d = detail.data;
+    if (!d) return [] as string[];
+    const blockById = new Map(d.blocks.map((b) => [b.id, b]));
+    const renderedBlocks = new Set<string>();
+    const order: string[] = [];
+    for (const t of d.tracks) {
+      if (t.blockId === null) {
+        order.push(t.id);
+      } else if (!renderedBlocks.has(t.blockId)) {
+        renderedBlocks.add(t.blockId);
+        for (const item of blockById.get(t.blockId)?.items ?? []) order.push(item.trackId);
+      }
+    }
+    for (const b of d.blocks) {
+      if (!renderedBlocks.has(b.id)) for (const item of b.items) order.push(item.trackId);
+    }
+    return order.filter((id, i) => order.indexOf(id) === i);
+  }, [detail.data]);
 
   const handleTrackClick = useCallback(
     (trackId: string, shiftKey: boolean) => {
@@ -82,30 +95,14 @@ export default function Workspace({ playlistId }: Props) {
     [queryClient, playlistId],
   );
 
-  /** Führt eine Blockänderung aus; bei 409 (Track in anderem Block) mit Rückfrage erneut mit force. */
-  const withForceConfirm = useCallback(
-    async (fn: (force: boolean) => Promise<{ detail: PlaylistDetail }>) => {
+  /** Führt eine Blockänderung aus, übernimmt das Ergebnis und meldet Fehler als Toast. */
+  const runMutation = useCallback(
+    async (fn: () => Promise<{ detail: PlaylistDetail }>) => {
       try {
-        const res = await fn(false);
+        const res = await fn();
         applyDetail(res.detail);
         return true;
       } catch (err) {
-        if (err instanceof ApiError && err.code === 'track_in_other_block') {
-          if (
-            window.confirm(
-              'Mindestens ein Track gehört schon zu einem anderen Block. In den neuen Block verschieben?',
-            )
-          ) {
-            try {
-              const res = await fn(true);
-              applyDetail(res.detail);
-              return true;
-            } catch (err2) {
-              toast('error', errorText(err2));
-            }
-          }
-          return false;
-        }
         toast('error', errorText(err));
         return false;
       }
@@ -115,14 +112,12 @@ export default function Workspace({ playlistId }: Props) {
 
   const createBlock = useCallback(async () => {
     const trackIds = [...selection];
-    const ok = await withForceConfirm((force) =>
-      api.createBlock(playlistId, { trackIds, force }),
-    );
+    const ok = await runMutation(() => api.createBlock(playlistId, { trackIds }));
     if (ok) {
       setSelection(new Set());
       setAnchor(null);
     }
-  }, [playlistId, selection, withForceConfirm]);
+  }, [playlistId, selection, runMutation]);
 
   const addSelectionToBlock = useCallback(async () => {
     const block = detail.data?.blocks.find((b) => b.id === addTarget);
@@ -130,12 +125,12 @@ export default function Workspace({ playlistId }: Props) {
     // Ein gebündelter Aufruf statt einem Request pro Track
     const existing = block.items.map((i) => i.trackId);
     const merged = [...existing, ...[...selection].filter((t) => !existing.includes(t))];
-    const ok = await withForceConfirm((force) => api.setBlockItems(block.id, merged, force));
+    const ok = await runMutation(() => api.setBlockItems(block.id, merged));
     if (ok) {
       setSelection(new Set());
       setAnchor(null);
     }
-  }, [addTarget, detail.data, selection, withForceConfirm]);
+  }, [addTarget, detail.data, selection, runMutation]);
 
   if (detail.isLoading) {
     return <p className="p-6 text-neutral-500">Lade Trackliste …</p>;
@@ -176,7 +171,13 @@ export default function Workspace({ playlistId }: Props) {
       const block = blockById.get(track.blockId);
       if (block) {
         rows.push(
-          <BlockGroup key={block.id} block={block} onChange={applyDetail} />,
+          <BlockGroup
+          key={block.id}
+          block={block}
+          onChange={applyDetail}
+          selection={selection}
+          onTrackClick={handleTrackClick}
+        />,
         );
       }
     }
@@ -185,7 +186,13 @@ export default function Workspace({ playlistId }: Props) {
   for (const block of data.blocks) {
     if (!rendered.has(block.id)) {
       rows.push(
-        <BlockGroup key={block.id} block={block} onChange={applyDetail} />,
+        <BlockGroup
+          key={block.id}
+          block={block}
+          onChange={applyDetail}
+          selection={selection}
+          onTrackClick={handleTrackClick}
+        />,
       );
     }
   }

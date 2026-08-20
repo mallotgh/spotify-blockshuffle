@@ -24,9 +24,11 @@ import { formatDuration } from './Workspace';
 interface Props {
   block: Block;
   onChange: (detail: PlaylistDetail) => void;
+  selection: Set<string>;
+  onTrackClick: (trackId: string, shiftKey: boolean) => void;
 }
 
-export default function BlockGroup({ block, onChange }: Props) {
+export default function BlockGroup({ block, onChange, selection, onTrackClick }: Props) {
   const toast = useToast();
   const [items, setItems] = useState<BlockItem[]>(block.items);
   const [editingName, setEditingName] = useState<string | null>(null);
@@ -132,6 +134,8 @@ export default function BlockGroup({ block, onChange }: Props) {
                 key={item.trackId}
                 item={item}
                 isOriginal={index === 0}
+                selected={selection.has(item.trackId)}
+                onSelect={(shiftKey) => onTrackClick(item.trackId, shiftKey)}
                 onRemove={() => removeTrack(item.trackId)}
               />
             ))}
@@ -145,10 +149,14 @@ export default function BlockGroup({ block, onChange }: Props) {
 function SortableTrack({
   item,
   isOriginal,
+  selected,
+  onSelect,
   onRemove,
 }: {
   item: BlockItem;
   isOriginal: boolean;
+  selected: boolean;
+  onSelect: (shiftKey: boolean) => void;
   onRemove: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -159,13 +167,18 @@ function SortableTrack({
     <li
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`flex items-center gap-3 px-3 py-1.5 ${isDragging ? 'z-10 opacity-70' : ''} ${
-        item.orphaned ? 'opacity-40' : ''
+      onClick={(e) => onSelect(e.shiftKey)}
+      title="Klicken zum Auswählen (z. B. für einen weiteren Block)"
+      className={`flex cursor-pointer select-none items-center gap-3 rounded-md px-3 py-1.5 ${
+        isDragging ? 'z-10 opacity-70' : ''
+      } ${item.orphaned ? 'opacity-40' : ''} ${
+        selected ? 'bg-green-900/50 ring-1 ring-green-600' : 'hover:bg-neutral-800/40'
       }`}
     >
       <span
         {...attributes}
         {...listeners}
+        onClick={(e) => e.stopPropagation()}
         title="Ziehen, um die Reihenfolge im Block zu ändern"
         className="cursor-grab touch-none select-none text-neutral-600 hover:text-neutral-300"
       >
@@ -203,7 +216,10 @@ function SortableTrack({
         </span>
       )}
       <button
-        onClick={onRemove}
+        onClick={(e) => {
+          e.stopPropagation();
+          onRemove();
+        }}
         title="Aus dem Block entfernen"
         className="shrink-0 rounded px-1.5 text-neutral-600 hover:bg-neutral-800 hover:text-red-400"
       >

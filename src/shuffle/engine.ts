@@ -44,14 +44,15 @@ export function blockShuffle(input: ShuffleInput, seed: string): ShuffleResult {
   const skippedOrphans: { blockId: string; trackId: string }[] = [];
 
   // Blöcke auf die tatsächlich vorhandenen Tracks reduzieren; Verwaiste protokollieren.
+  // Ein Track darf in mehreren Blöcken stecken — er spielt dann einmal pro Block.
   const blockUnits: ShuffleUnit[] = [];
-  const blockedTrackIds = new Set<string>();
+  const membershipCount = new Map<string, number>();
   for (const block of input.blocks) {
     const present: string[] = [];
     for (const trackId of block.trackIds) {
       if (inPlaylist.has(trackId)) {
         present.push(trackId);
-        blockedTrackIds.add(trackId);
+        membershipCount.set(trackId, (membershipCount.get(trackId) ?? 0) + 1);
       } else {
         skippedOrphans.push({ blockId: block.id, trackId });
       }
@@ -74,12 +75,13 @@ export function blockShuffle(input: ShuffleInput, seed: string): ShuffleResult {
     const pos = Math.min(...unit.trackIds.map((t) => firstPos.get(t) ?? Number.MAX_SAFE_INTEGER));
     units.push({ sortPos: pos, unit });
   }
-  // Pro Blockzugehörigkeit wird nur das erste Vorkommen konsumiert; taucht ein
-  // Track mehrfach in der Playlist auf, bleiben die weiteren Vorkommen Einzel-Einheiten.
-  const consumedByBlock = new Set<string>();
+  // Pro Blockzugehörigkeit wird ein Vorkommen aus dem Einzelpool konsumiert;
+  // überzählige Vorkommen eines Tracks bleiben Einzel-Einheiten.
+  const consumed = new Map<string, number>();
   input.playlistOrder.forEach((trackId, pos) => {
-    if (blockedTrackIds.has(trackId) && !consumedByBlock.has(trackId)) {
-      consumedByBlock.add(trackId);
+    const used = consumed.get(trackId) ?? 0;
+    if (used < (membershipCount.get(trackId) ?? 0)) {
+      consumed.set(trackId, used + 1);
       return;
     }
     units.push({ sortPos: pos, unit: { blockId: null, blockName: null, trackIds: [trackId] } });

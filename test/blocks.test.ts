@@ -50,33 +50,13 @@ describe('Blockverwaltung', () => {
     expect(() => createBlock(db, PL, ['t1', 'fremd'])).toThrowError(/nicht zu dieser Playlist/);
   });
 
-  it('verhindert, dass ein Track zwei Blöcken zugeordnet wird (409)', () => {
-    createBlock(db, PL, ['t0', 't1']);
-    try {
-      createBlock(db, PL, ['t1', 't2']);
-      expect.unreachable();
-    } catch (err) {
-      expect(err).toBeInstanceOf(ApiError);
-      expect((err as ApiError).statusCode).toBe(409);
-    }
-  });
-
-  it('verschiebt einen Track mit force und löst zu kleine Quellblöcke auf', () => {
+  it('erlaubt, dass ein Track zu mehreren Blöcken gehört', () => {
     const b1 = createBlock(db, PL, ['t0', 't1']);
-    createBlock(db, PL, ['t1', 't2'], { force: true });
+    const b2 = createBlock(db, PL, ['t1', 't2']);
     const blocks = getBlocks(db, PL);
-    // b1 ist auf einen Track geschrumpft und wurde aufgelöst
-    expect(blocks.find((b) => b.id === b1.id)).toBeUndefined();
-    expect(blocks).toHaveLength(1);
-    expect(blocks[0]!.items.map((i) => i.trackId)).toEqual(['t1', 't2']);
-  });
-
-  it('force kann alle Tracks eines Quellblocks übernehmen, ohne zu scheitern', () => {
-    createBlock(db, PL, ['t0', 't1']);
-    createBlock(db, PL, ['t0', 't1', 't2'], { force: true });
-    const blocks = getBlocks(db, PL);
-    expect(blocks).toHaveLength(1);
-    expect(blocks[0]!.items.map((i) => i.trackId)).toEqual(['t0', 't1', 't2']);
+    expect(blocks).toHaveLength(2);
+    expect(blocks.find((b) => b.id === b1.id)!.items.map((i) => i.trackId)).toEqual(['t0', 't1']);
+    expect(blocks.find((b) => b.id === b2.id)!.items.map((i) => i.trackId)).toEqual(['t1', 't2']);
   });
 
   it('löst einen Block automatisch auf, wenn er auf einen Track schrumpft', () => {
@@ -100,16 +80,17 @@ describe('Blockverwaltung', () => {
     expect(getBlocks(db, PL)[0]!.items.map((i) => i.trackId)).toEqual(['t2', 't0', 't1']);
   });
 
-  it('addTrackToBlock hängt hinten an und respektiert Blockzugehörigkeit', () => {
+  it('addTrackToBlock hängt hinten an, auch wenn der Track schon in einem anderen Block ist', () => {
     const b1 = createBlock(db, PL, ['t0', 't1']);
     createBlock(db, PL, ['t4', 't5']);
     addTrackToBlock(db, b1.id, 't2');
+    addTrackToBlock(db, b1.id, 't4');
     expect(getBlocks(db, PL).find((b) => b.id === b1.id)!.items.map((i) => i.trackId)).toEqual([
       't0',
       't1',
       't2',
+      't4',
     ]);
-    expect(() => addTrackToBlock(db, b1.id, 't4')).toThrowError(/anderen Block/);
   });
 
   it('markiert Tracks als verwaist, die aus der Playlist verschwunden sind', () => {

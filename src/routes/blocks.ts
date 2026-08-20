@@ -20,7 +20,6 @@ export function registerBlockRoutes(app: FastifyInstance, ctx: AppContext): void
         trackIds: z.array(z.string()).min(2),
         name: z.string().optional(),
         color: z.string().optional(),
-        force: z.boolean().default(false),
       })
       .parse(req.body);
     requirePlaylist(ctx.db, id);
@@ -39,16 +38,16 @@ export function registerBlockRoutes(app: FastifyInstance, ctx: AppContext): void
   app.put('/api/blocks/:blockId/items', async (req) => {
     const { blockId } = z.object({ blockId: z.string() }).parse(req.params);
     const body = z
-      .object({ trackIds: z.array(z.string()).min(2), force: z.boolean().default(false) })
+      .object({ trackIds: z.array(z.string()).min(2) })
       .parse(req.body);
-    const block = setBlockItems(ctx.db, blockId, body.trackIds, { force: body.force });
+    const block = setBlockItems(ctx.db, blockId, body.trackIds);
     return { detail: playlistDetail(ctx.db, block.playlist_id) };
   });
 
   app.post('/api/blocks/:blockId/items', async (req) => {
     const { blockId } = z.object({ blockId: z.string() }).parse(req.params);
-    const body = z.object({ trackId: z.string(), force: z.boolean().default(false) }).parse(req.body);
-    const block = addTrackToBlock(ctx.db, blockId, body.trackId, { force: body.force });
+    const body = z.object({ trackId: z.string() }).parse(req.body);
+    const block = addTrackToBlock(ctx.db, blockId, body.trackId);
     return { detail: playlistDetail(ctx.db, block.playlist_id) };
   });
 
