@@ -226,7 +226,18 @@ export class SpotifyClient {
       }
       if (res.status === 204) return null;
       const text = await res.text();
-      return text.length > 0 ? (JSON.parse(text) as unknown) : null;
+      if (text.length === 0) return null;
+      // Player-Endpunkte antworten teils mit 200 und Klartext-Body statt 204 —
+      // nur als JSON parsen, was auch JSON ist; sonst Rohtext zurückgeben.
+      const contentType = res.headers.get('content-type') ?? '';
+      if (contentType.includes('application/json')) {
+        return JSON.parse(text) as unknown;
+      }
+      try {
+        return JSON.parse(text) as unknown;
+      } catch {
+        return text;
+      }
     }
   }
 
