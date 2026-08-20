@@ -29,15 +29,11 @@ export const simplifiedPlaylistSchema = z.object({
 
 export const playlistPageSchema = z.object({
   items: z.array(simplifiedPlaylistSchema.nullable()),
-  total: z.number(),
-  limit: z.number(),
-  offset: z.number(),
   next: z.string().nullable(),
 });
 
 export const trackSchema = z.object({
   id: z.string().nullable(),
-  uri: z.string(),
   name: z.string(),
   duration_ms: z.number(),
   type: z.string().optional(),
@@ -59,9 +55,6 @@ export const playlistItemEntrySchema = z.object({
 
 export const playlistItemsPageSchema = z.object({
   items: z.array(playlistItemEntrySchema),
-  total: z.number(),
-  limit: z.number(),
-  offset: z.number(),
   next: z.string().nullable(),
 });
 
@@ -100,7 +93,4 @@ export const playerStateSchema = z.object({
   item: trackSchema.nullable().optional(),
 });
 
-export type SimplifiedPlaylist = z.infer<typeof simplifiedPlaylistSchema>;
 export type SpotifyTrack = z.infer<typeof trackSchema>;
-export type SpotifyDevice = z.infer<typeof deviceSchema>;
-export type PlayerState = z.infer<typeof playerStateSchema>;

@@ -54,7 +54,12 @@ export function buildServer(ctx: AppContext): FastifyInstance {
     app.register(fastifyStatic, { root: ctx.staticDir });
     // SPA-Fallback: alles außer /api und /callback bekommt die index.html
     app.setNotFoundHandler((req, reply) => {
-      if (req.raw.url?.startsWith('/api/') || req.raw.url?.startsWith('/callback')) {
+      // Fehlende Assets (z. B. alte Bundle-Hashes) dürfen kein HTML mit 200 bekommen
+      if (
+        req.raw.url?.startsWith('/api/') ||
+        req.raw.url?.startsWith('/callback') ||
+        req.raw.url?.startsWith('/assets/')
+      ) {
         reply.status(404).send({ error: 'not_found', message: 'Nicht gefunden.' });
         return;
       }

@@ -74,10 +74,15 @@ export function blockShuffle(input: ShuffleInput, seed: string): ShuffleResult {
     const pos = Math.min(...unit.trackIds.map((t) => firstPos.get(t) ?? Number.MAX_SAFE_INTEGER));
     units.push({ sortPos: pos, unit });
   }
+  // Pro Blockzugehörigkeit wird nur das erste Vorkommen konsumiert; taucht ein
+  // Track mehrfach in der Playlist auf, bleiben die weiteren Vorkommen Einzel-Einheiten.
+  const consumedByBlock = new Set<string>();
   input.playlistOrder.forEach((trackId, pos) => {
-    if (!blockedTrackIds.has(trackId)) {
-      units.push({ sortPos: pos, unit: { blockId: null, blockName: null, trackIds: [trackId] } });
+    if (blockedTrackIds.has(trackId) && !consumedByBlock.has(trackId)) {
+      consumedByBlock.add(trackId);
+      return;
     }
+    units.push({ sortPos: pos, unit: { blockId: null, blockName: null, trackIds: [trackId] } });
   });
   units.sort((a, b) => a.sortPos - b.sortPos);
 

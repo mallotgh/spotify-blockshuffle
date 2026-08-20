@@ -37,13 +37,25 @@ export function trackDto(row: TrackRow): TrackDto {
 
 export function getTrackMap(db: DB, trackIds: string[]): Map<string, TrackDto> {
   const map = new Map<string, TrackDto>();
-  const stmt = db.prepare('SELECT * FROM tracks WHERE id = ?');
-  for (const id of new Set(trackIds)) {
-    const row = stmt.get(id) as TrackRow | undefined;
-    if (row) map.set(id, trackDto(row));
+  const unique = [...new Set(trackIds)];
+  // SQLite erlaubt standardmäßig max. 999 Parameter pro Statement -> stückeln.
+  for (let i = 0; i < unique.length; i += 500) {
+    const chunk = unique.slice(i, i + 500);
+    const rows = db
+      .prepare(`SELECT * FROM tracks WHERE id IN (${chunk.map(() => '?').join(',')})`)
+      .all(...chunk) as TrackRow[];
+    for (const row of rows) map.set(row.id, trackDto(row));
   }
   return map;
 }
+
+/** ?refresh=1 / ?refresh=true — alles andere (auch 0/false) bedeutet kein Zwangs-Sync. */
+export const refreshQuerySchema = z.object({
+  refresh: z
+    .string()
+    .optional()
+    .transform((v) => v === '1' || v === 'true'),
+});
 
 export function requirePlaylist(db: DB, id: string): PlaylistRow {
   const row = db.prepare('SELECT * FROM playlists WHERE id = ?').get(id) as PlaylistRow | undefined;
@@ -99,7 +111,7 @@ export function playlistDetail(db: DB, playlistId: string) {
 
 export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get('/api/playlists', async (req) => {
-    const query = z.object({ refresh: z.coerce.boolean().default(false) }).parse(req.query);
+    const query = refreshQuerySchema.parse(req.query);
     const count = (ctx.db.prepare('SELECT COUNT(*) AS n FROM playlists WHERE stale = 0').get() as { n: number }).n;
     if (query.refresh || count === 0) {
       await syncPlaylists(ctx.db, ctx.spotify);
@@ -127,7 +139,7 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
 
   app.get('/api/playlists/:id', async (req) => {
     const { id } = z.object({ id: z.string() }).parse(req.params);
-    const query = z.object({ refresh: z.coerce.boolean().default(false) }).parse(req.query);
+    const query = refreshQuerySchema.parse(req.query);
     await syncPlaylistItems(ctx.db, ctx.spotify, id, { force: query.refresh });
     return playlistDetail(ctx.db, id);
   });

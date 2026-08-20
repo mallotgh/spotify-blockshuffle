@@ -79,8 +79,17 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
   });
 }
 
+function escapeHtml(s: string): string {
+  return s
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
 function callbackErrorPage(message: string): string {
   return `<!doctype html><html lang="de"><meta charset="utf-8"><title>Anmeldung fehlgeschlagen</title>
 <body style="font-family:system-ui;max-width:36rem;margin:4rem auto;padding:0 1rem">
-<h1>Anmeldung fehlgeschlagen</h1><p>${message}</p><p><a href="/">Zurück zur App</a></p></body></html>`;
+<h1>Anmeldung fehlgeschlagen</h1><p>${escapeHtml(message)}</p><p><a href="/">Zurück zur App</a></p></body></html>`;
 }

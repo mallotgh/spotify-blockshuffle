@@ -88,4 +88,14 @@ describe('blockShuffle', () => {
     const result = blockShuffle({ playlistOrder: ['x', 'y', 'x'], blocks: [] }, 's');
     expect([...result.order].sort()).toEqual(['x', 'x', 'y']);
   });
+
+  it('ein Block konsumiert nur das erste Vorkommen eines doppelten Tracks', () => {
+    const result = blockShuffle(
+      { playlistOrder: ['a', 'b', 'a', 'c'], blocks: [{ id: 'b1', name: 'B', trackIds: ['a', 'c'] }] },
+      's',
+    );
+    expect(result.order).toHaveLength(4);
+    expect([...result.order].sort()).toEqual(['a', 'a', 'b', 'c']);
+    expect(result.units.find((u) => u.blockId === 'b1')!.trackIds).toEqual(['a', 'c']);
+  });
 });

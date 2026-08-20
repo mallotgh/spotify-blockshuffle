@@ -24,16 +24,16 @@ export function registerBlockRoutes(app: FastifyInstance, ctx: AppContext): void
       })
       .parse(req.body);
     requirePlaylist(ctx.db, id);
-    const block = createBlock(ctx.db, id, body.trackIds, body);
+    createBlock(ctx.db, id, body.trackIds, body);
     reply.status(201);
-    return { block, detail: playlistDetail(ctx.db, id) };
+    return { detail: playlistDetail(ctx.db, id) };
   });
 
   app.patch('/api/blocks/:blockId', async (req) => {
     const { blockId } = z.object({ blockId: z.string() }).parse(req.params);
     const body = z.object({ name: z.string().optional(), color: z.string().optional() }).parse(req.body);
     const block = updateBlock(ctx.db, blockId, body);
-    return { block, detail: playlistDetail(ctx.db, block.playlist_id) };
+    return { detail: playlistDetail(ctx.db, block.playlist_id) };
   });
 
   app.put('/api/blocks/:blockId/items', async (req) => {
@@ -42,14 +42,14 @@ export function registerBlockRoutes(app: FastifyInstance, ctx: AppContext): void
       .object({ trackIds: z.array(z.string()).min(2), force: z.boolean().default(false) })
       .parse(req.body);
     const block = setBlockItems(ctx.db, blockId, body.trackIds, { force: body.force });
-    return { block, detail: playlistDetail(ctx.db, block.playlist_id) };
+    return { detail: playlistDetail(ctx.db, block.playlist_id) };
   });
 
   app.post('/api/blocks/:blockId/items', async (req) => {
     const { blockId } = z.object({ blockId: z.string() }).parse(req.params);
     const body = z.object({ trackId: z.string(), force: z.boolean().default(false) }).parse(req.body);
     const block = addTrackToBlock(ctx.db, blockId, body.trackId, { force: body.force });
-    return { block, detail: playlistDetail(ctx.db, block.playlist_id) };
+    return { detail: playlistDetail(ctx.db, block.playlist_id) };
   });
 
   app.delete('/api/blocks/:blockId/items/:trackId', async (req) => {

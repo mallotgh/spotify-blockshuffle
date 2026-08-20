@@ -34,11 +34,16 @@ export const config = {
   },
 };
 
-export function assertSpotifyConfig(): void {
+export function missingSpotifyEnv(): string[] {
   const missing: string[] = [];
   if (!config.spotify.clientId) missing.push('SPOTIFY_CLIENT_ID');
   if (!config.spotify.clientSecret) missing.push('SPOTIFY_CLIENT_SECRET');
   if (!config.spotify.redirectUri) missing.push('SPOTIFY_REDIRECT_URI');
+  return missing;
+}
+
+export function assertSpotifyConfig(): void {
+  const missing = missingSpotifyEnv();
   if (missing.length > 0) {
     throw new Error(`Fehlende Umgebungsvariablen: ${missing.join(', ')}`);
   }

@@ -1,6 +1,5 @@
 import type {
   AuthStatus,
-  Block,
   Device,
   PlayerStatus,
   PlaylistDetail,
@@ -35,6 +34,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (!res.ok) {
     const err = (body ?? {}) as { error?: string; message?: string; details?: unknown };
+    // Session serverseitig weg (z. B. Refresh-Token widerrufen) -> zurück zum Login
+    if (res.status === 401 && err.error === 'not_authenticated' && !path.startsWith('/api/auth/')) {
+      window.dispatchEvent(new CustomEvent('auth-expired'));
+    }
     throw new ApiError(
       res.status,
       err.error ?? 'unknown',
@@ -55,7 +58,7 @@ export const api = {
     request<PlaylistDetail>(`/api/playlists/${id}${refresh ? '?refresh=1' : ''}`),
 
   createBlock: (playlistId: string, body: { trackIds: string[]; name?: string; force?: boolean }) =>
-    request<{ block: Block; detail: PlaylistDetail }>(`/api/playlists/${playlistId}/blocks`, {
+    request<{ detail: PlaylistDetail }>(`/api/playlists/${playlistId}/blocks`, {
       method: 'POST',
       body: JSON.stringify(body),
     }),

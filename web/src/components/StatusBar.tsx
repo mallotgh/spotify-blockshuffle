@@ -6,7 +6,8 @@ export default function StatusBar() {
   const status = useQuery({
     queryKey: ['playerStatus'],
     queryFn: api.playerStatus,
-    refetchInterval: 5000,
+    // Ohne aktive Wiedergabe reicht ein langsamer Takt — schont Spotifys Rate-Limit
+    refetchInterval: (query) => (query.state.data?.active ? 5000 : 30_000),
     retry: false,
   });
 

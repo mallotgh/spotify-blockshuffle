@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 
@@ -21,6 +22,15 @@ export default function Header(props: Props) {
 
   const list = devices.data?.devices ?? [];
   const noDevices = devices.isSuccess && list.length === 0;
+
+  // Geräte-IDs ändern sich, wenn Spotify auf dem Gerät neu startet — eine
+  // gespeicherte, nicht mehr existierende Auswahl stillschweigend verwerfen.
+  const { deviceId, onSelectDevice } = props;
+  useEffect(() => {
+    if (devices.isSuccess && deviceId && !list.some((d) => d.id === deviceId)) {
+      onSelectDevice(undefined);
+    }
+  }, [devices.isSuccess, list, deviceId, onSelectDevice]);
 
   return (
     <header className="flex flex-wrap items-center gap-3 border-b border-neutral-800 bg-neutral-900 px-4 py-3">

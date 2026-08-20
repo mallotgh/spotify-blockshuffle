@@ -71,6 +71,14 @@ describe('Blockverwaltung', () => {
     expect(blocks[0]!.items.map((i) => i.trackId)).toEqual(['t1', 't2']);
   });
 
+  it('force kann alle Tracks eines Quellblocks übernehmen, ohne zu scheitern', () => {
+    createBlock(db, PL, ['t0', 't1']);
+    createBlock(db, PL, ['t0', 't1', 't2'], { force: true });
+    const blocks = getBlocks(db, PL);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]!.items.map((i) => i.trackId)).toEqual(['t0', 't1', 't2']);
+  });
+
   it('löst einen Block automatisch auf, wenn er auf einen Track schrumpft', () => {
     const block = createBlock(db, PL, ['t0', 't1']);
     const result = removeTrackFromBlock(db, block.id, 't0');

@@ -68,7 +68,8 @@ const MIGRATIONS: string[] = [
     playlist_id TEXT NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
     seed TEXT NOT NULL,
     order_json TEXT NOT NULL,
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    played_at INTEGER
   );
   CREATE INDEX idx_shuffle_runs_playlist ON shuffle_runs(playlist_id, created_at);
 

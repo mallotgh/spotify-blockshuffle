@@ -16,17 +16,20 @@ export interface ShuffleRunRow {
   seed: string;
   order_json: string;
   created_at: number;
+  played_at: number | null;
 }
 
-export function latestRun(db: AppContext['db'], playlistId?: string): ShuffleRunRow | undefined {
-  if (playlistId) {
-    return db
-      .prepare('SELECT * FROM shuffle_runs WHERE playlist_id = ? ORDER BY created_at DESC, id LIMIT 1')
-      .get(playlistId) as ShuffleRunRow | undefined;
-  }
-  return db.prepare('SELECT * FROM shuffle_runs ORDER BY created_at DESC, id LIMIT 1').get() as
-    | ShuffleRunRow
-    | undefined;
+export function latestRun(db: AppContext['db'], playlistId: string): ShuffleRunRow | undefined {
+  return db
+    .prepare('SELECT * FROM shuffle_runs WHERE playlist_id = ? ORDER BY created_at DESC, id LIMIT 1')
+    .get(playlistId) as ShuffleRunRow | undefined;
+}
+
+/** Der zuletzt tatsächlich abgespielte Lauf — Vorschau-Läufe zählen nicht. */
+export function latestPlayedRun(db: AppContext['db']): ShuffleRunRow | undefined {
+  return db
+    .prepare('SELECT * FROM shuffle_runs WHERE played_at IS NOT NULL ORDER BY played_at DESC, id LIMIT 1')
+    .get() as ShuffleRunRow | undefined;
 }
 
 function runDto(db: AppContext['db'], run: ShuffleRunRow) {
@@ -85,6 +88,7 @@ export function registerShuffleRoutes(app: FastifyInstance, ctx: AppContext): vo
       seed,
       order_json: JSON.stringify(result.units),
       created_at: Date.now(),
+      played_at: null,
     };
     ctx.db
       .prepare('INSERT INTO shuffle_runs (id, playlist_id, seed, order_json, created_at) VALUES (?, ?, ?, ?, ?)')
@@ -110,7 +114,22 @@ export function registerShuffleRoutes(app: FastifyInstance, ctx: AppContext): vo
     if (!run) throw new ApiError(404, 'run_not_found', 'Shuffle-Lauf nicht gefunden.');
     const playlist = requirePlaylist(ctx.db, run.playlist_id);
     const units = JSON.parse(run.order_json) as ShuffleUnit[];
-    const trackIds = units.flatMap((u) => u.trackIds);
+
+    // Die Playlist kann sich seit der Berechnung geändert haben: inzwischen
+    // entfernte Tracks werden auch beim Abspielen eines alten Laufs übersprungen.
+    await syncPlaylistItems(ctx.db, ctx.spotify, run.playlist_id);
+    const inPlaylist = new Set(
+      (
+        ctx.db
+          .prepare('SELECT DISTINCT track_id FROM playlist_items WHERE playlist_id = ?')
+          .all(run.playlist_id) as { track_id: string }[]
+      ).map((r) => r.track_id),
+    );
+    const allTrackIds = units.flatMap((u) => u.trackIds);
+    const trackIds = allTrackIds.filter((t) => inPlaylist.has(t));
+    if (trackIds.length === 0) {
+      throw new ApiError(409, 'playlist_empty', 'Kein Track dieses Laufs ist noch in der Playlist.');
+    }
 
     const result = await startPlayback(ctx.db, ctx.spotify, {
       playlistId: run.playlist_id,
@@ -119,7 +138,13 @@ export function registerShuffleRoutes(app: FastifyInstance, ctx: AppContext): vo
       deviceId: body.deviceId,
       mode: body.mode,
     });
-    return { ok: true, ...result, trackCount: trackIds.length };
+    ctx.db.prepare('UPDATE shuffle_runs SET played_at = ? WHERE id = ?').run(Date.now(), run.id);
+    return {
+      ok: true,
+      ...result,
+      trackCount: trackIds.length,
+      skippedTracks: allTrackIds.length - trackIds.length,
+    };
   });
 
   /** Letzter Lauf einer Playlist (z. B. um die Vorschau wieder zu öffnen). */

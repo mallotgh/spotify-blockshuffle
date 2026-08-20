@@ -56,14 +56,28 @@ export function getBlocks(db: DB, playlistId: string): BlockWithItems[] {
   const blocks = db
     .prepare('SELECT * FROM blocks WHERE playlist_id = ? ORDER BY created_at, id')
     .all(playlistId) as BlockRow[];
-  return blocks.map((b) => ({
-    ...b,
-    items: (
-      db
-        .prepare('SELECT track_id, position FROM block_items WHERE block_id = ? ORDER BY position')
-        .all(b.id) as { track_id: string; position: number }[]
-    ).map((i) => ({ trackId: i.track_id, position: i.position, orphaned: !inPlaylist.has(i.track_id) })),
-  }));
+  const itemRows = db
+    .prepare(
+      `SELECT bi.block_id, bi.track_id, bi.position FROM block_items bi
+       JOIN blocks b ON b.id = bi.block_id
+       WHERE b.playlist_id = ? ORDER BY bi.block_id, bi.position`,
+    )
+    .all(playlistId) as { block_id: string; track_id: string; position: number }[];
+  const itemsByBlock = new Map<string, BlockWithItems['items']>();
+  for (const row of itemRows) {
+    let list = itemsByBlock.get(row.block_id);
+    if (!list) {
+      list = [];
+      itemsByBlock.set(row.block_id, list);
+    }
+    list.push({ trackId: row.track_id, position: row.position, orphaned: !inPlaylist.has(row.track_id) });
+  }
+  return blocks.map((b) => ({ ...b, items: itemsByBlock.get(b.id) ?? [] }));
+}
+
+export function getBlockWithItems(db: DB, blockId: string): BlockWithItems {
+  const block = getBlock(db, blockId);
+  return getBlocks(db, block.playlist_id).find((b) => b.id === blockId)!;
 }
 
 export function getBlock(db: DB, blockId: string): BlockRow {
@@ -104,9 +118,27 @@ function resolveConflicts(
       { conflicts },
     );
   }
-  for (const c of conflicts) {
-    removeTrackFromBlock(db, c.blockId, c.trackId);
+  // Direkt aus den Quellblöcken lösen und diese erst danach aufräumen —
+  // ein Quellblock kann durch mehrere Entnahmen in einem Zug verschwinden.
+  const del = db.prepare('DELETE FROM block_items WHERE block_id = ? AND track_id = ?');
+  for (const c of conflicts) del.run(c.blockId, c.trackId);
+  for (const blockId of new Set(conflicts.map((c) => c.blockId))) {
+    cleanupBlock(db, blockId);
   }
+}
+
+/** Löst einen Block unter 2 Tracks auf, sonst Positionen lückenlos ab 0 halten. */
+function cleanupBlock(db: DB, blockId: string): { dissolved: boolean } {
+  const rest = db
+    .prepare('SELECT track_id FROM block_items WHERE block_id = ? ORDER BY position')
+    .all(blockId) as { track_id: string }[];
+  if (rest.length < 2) {
+    db.prepare('DELETE FROM blocks WHERE id = ?').run(blockId);
+    return { dissolved: true };
+  }
+  const update = db.prepare('UPDATE block_items SET position = ? WHERE block_id = ? AND track_id = ?');
+  rest.forEach((r, i) => update.run(i, blockId, r.track_id));
+  return { dissolved: false };
 }
 
 export function createBlock(
@@ -140,7 +172,7 @@ export function createBlock(
     ).run(id, playlistId, opts.name?.trim() || firstTrackName || 'Block', opts.color ?? nextColor(db, playlistId), Date.now());
     const insert = db.prepare('INSERT INTO block_items (block_id, track_id, position) VALUES (?, ?, ?)');
     ordered.forEach((t, i) => insert.run(id, t, i));
-    return getBlocks(db, playlistId).find((b) => b.id === id)!;
+    return getBlockWithItems(db, id);
   })();
 }
 
@@ -183,7 +215,7 @@ export function setBlockItems(
     db.prepare('DELETE FROM block_items WHERE block_id = ?').run(blockId);
     const insert = db.prepare('INSERT INTO block_items (block_id, track_id, position) VALUES (?, ?, ?)');
     unique.forEach((t, i) => insert.run(blockId, t, i));
-    return getBlocks(db, block.playlist_id).find((b) => b.id === blockId)!;
+    return getBlockWithItems(db, blockId);
   })();
 }
 
@@ -199,17 +231,7 @@ export function removeTrackFromBlock(db: DB, blockId: string, trackId: string): 
     if (res.changes === 0) {
       throw new ApiError(404, 'track_not_in_block', 'Track ist nicht in diesem Block.');
     }
-    const rest = db
-      .prepare('SELECT track_id FROM block_items WHERE block_id = ? ORDER BY position')
-      .all(blockId) as { track_id: string }[];
-    if (rest.length < 2) {
-      db.prepare('DELETE FROM blocks WHERE id = ?').run(blockId);
-      return { dissolved: true };
-    }
-    // Positionen lückenlos halten
-    const update = db.prepare('UPDATE block_items SET position = ? WHERE block_id = ? AND track_id = ?');
-    rest.forEach((r, i) => update.run(i, blockId, r.track_id));
-    return { dissolved: false };
+    return cleanupBlock(db, blockId);
   })();
 }
 
@@ -234,7 +256,7 @@ export function addTrackToBlock(
     db.prepare(
       'INSERT OR IGNORE INTO block_items (block_id, track_id, position) VALUES (?, ?, ?)',
     ).run(blockId, trackId, max + 1);
-    return getBlocks(db, block.playlist_id).find((b) => b.id === blockId)!;
+    return getBlockWithItems(db, blockId);
   })();
 }
 

@@ -17,18 +17,17 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { api } from '../lib/api';
+import { useToast, errorText } from '../lib/toast';
 import type { Block, BlockItem, PlaylistDetail } from '../types';
 import { formatDuration } from './Workspace';
 
 interface Props {
   block: Block;
   onChange: (detail: PlaylistDetail) => void;
-  withForceConfirm: (
-    fn: (force: boolean) => Promise<{ detail: PlaylistDetail }>,
-  ) => Promise<boolean>;
 }
 
 export default function BlockGroup({ block, onChange }: Props) {
+  const toast = useToast();
   const [items, setItems] = useState<BlockItem[]>(block.items);
   const [editingName, setEditingName] = useState<string | null>(null);
 
@@ -50,8 +49,9 @@ export default function BlockGroup({ block, onChange }: Props) {
     try {
       const res = await api.setBlockItems(block.id, reordered.map((i) => i.trackId));
       onChange(res.detail);
-    } catch {
+    } catch (err) {
       setItems(block.items);
+      toast('error', `Reihenfolge konnte nicht gespeichert werden: ${errorText(err)}`);
     }
   };
 
@@ -59,19 +59,31 @@ export default function BlockGroup({ block, onChange }: Props) {
     const name = editingName?.trim();
     setEditingName(null);
     if (!name || name === block.name) return;
-    const res = await api.renameBlock(block.id, name);
-    onChange(res.detail);
+    try {
+      const res = await api.renameBlock(block.id, name);
+      onChange(res.detail);
+    } catch (err) {
+      toast('error', errorText(err));
+    }
   };
 
   const dissolve = async () => {
     if (!window.confirm(`Block „${block.name}" auflösen? Die Tracks bleiben in der Playlist.`)) return;
-    const res = await api.deleteBlock(block.id);
-    onChange(res.detail);
+    try {
+      const res = await api.deleteBlock(block.id);
+      onChange(res.detail);
+    } catch (err) {
+      toast('error', errorText(err));
+    }
   };
 
   const removeTrack = async (trackId: string) => {
-    const res = await api.removeTrackFromBlock(block.id, trackId);
-    onChange(res.detail);
+    try {
+      const res = await api.removeTrackFromBlock(block.id, trackId);
+      onChange(res.detail);
+    } catch (err) {
+      toast('error', errorText(err));
+    }
   };
 
   return (

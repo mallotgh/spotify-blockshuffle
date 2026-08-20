@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from './lib/api';
 import { useToast, errorText } from './lib/toast';
@@ -11,7 +11,15 @@ import PreviewModal from './components/PreviewModal';
 import StatusBar from './components/StatusBar';
 
 export default function App() {
+  const queryClient = useQueryClient();
   const auth = useQuery({ queryKey: ['auth'], queryFn: api.authStatus });
+
+  // Vom API-Wrapper gemeldet, wenn die Session serverseitig weg ist -> Login-Screen
+  useEffect(() => {
+    const onExpired = () => queryClient.invalidateQueries({ queryKey: ['auth'] });
+    window.addEventListener('auth-expired', onExpired);
+    return () => window.removeEventListener('auth-expired', onExpired);
+  }, [queryClient]);
 
   if (auth.isLoading) {
     return <Center>Lade&nbsp;…</Center>;

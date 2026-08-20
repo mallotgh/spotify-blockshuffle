@@ -25,30 +25,33 @@ export interface PlaylistRow {
 
 /** Lädt alle Playlists des Nutzers (paginiert) und persistiert sie. */
 export async function syncPlaylists(db: DB, spotify: SpotifyClient): Promise<void> {
+  const upsert = db.prepare(
+    `INSERT INTO playlists (id, name, owner_id, snapshot_id, image_url, track_total, stale)
+     VALUES (@id, @name, @owner_id, @snapshot_id, @image_url, @track_total, 0)
+     ON CONFLICT(id) DO UPDATE SET
+       name = @name, owner_id = @owner_id, image_url = @image_url,
+       track_total = @track_total, stale = 0`,
+  );
   const seen = new Set<string>();
   let offset = 0;
   for (;;) {
     const page = await spotify.requestParsed(playlistPageSchema, '/me/playlists', {
       query: { limit: PLAYLISTS_PAGE_LIMIT, offset },
     });
-    for (const pl of page.items) {
-      if (!pl) continue;
-      seen.add(pl.id);
-      db.prepare(
-        `INSERT INTO playlists (id, name, owner_id, snapshot_id, image_url, track_total, stale)
-         VALUES (@id, @name, @owner_id, @snapshot_id, @image_url, @track_total, 0)
-         ON CONFLICT(id) DO UPDATE SET
-           name = @name, owner_id = @owner_id, image_url = @image_url,
-           track_total = @track_total, stale = 0`,
-      ).run({
-        id: pl.id,
-        name: pl.name,
-        owner_id: pl.owner.id,
-        snapshot_id: pl.snapshot_id ?? null,
-        image_url: pl.images?.[0]?.url ?? null,
-        track_total: pl.items?.total ?? 0,
-      });
-    }
+    db.transaction(() => {
+      for (const pl of page.items) {
+        if (!pl) continue;
+        seen.add(pl.id);
+        upsert.run({
+          id: pl.id,
+          name: pl.name,
+          owner_id: pl.owner.id,
+          snapshot_id: pl.snapshot_id ?? null,
+          image_url: pl.images?.[0]?.url ?? null,
+          track_total: pl.items?.total ?? 0,
+        });
+      }
+    })();
     if (!page.next) break;
     offset += PLAYLISTS_PAGE_LIMIT;
   }

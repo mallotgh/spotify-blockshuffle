@@ -34,6 +34,8 @@ export default function Workspace({ playlistId }: Props) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Nicht auslösen, wenn ein Modal offen ist oder gerade ein Feld editiert wird
+      if (document.querySelector('[role="dialog"]') || e.target instanceof HTMLInputElement) return;
       if (e.key === 'Escape') {
         setSelection(new Set());
         setAnchor(null);
@@ -123,14 +125,17 @@ export default function Workspace({ playlistId }: Props) {
   }, [playlistId, selection, withForceConfirm]);
 
   const addSelectionToBlock = useCallback(async () => {
-    if (!addTarget) return;
-    for (const trackId of selection) {
-      const ok = await withForceConfirm((force) => api.addTrackToBlock(addTarget, trackId, force));
-      if (!ok) break;
+    const block = detail.data?.blocks.find((b) => b.id === addTarget);
+    if (!block) return;
+    // Ein gebündelter Aufruf statt einem Request pro Track
+    const existing = block.items.map((i) => i.trackId);
+    const merged = [...existing, ...[...selection].filter((t) => !existing.includes(t))];
+    const ok = await withForceConfirm((force) => api.setBlockItems(block.id, merged, force));
+    if (ok) {
+      setSelection(new Set());
+      setAnchor(null);
     }
-    setSelection(new Set());
-    setAnchor(null);
-  }, [addTarget, selection, withForceConfirm]);
+  }, [addTarget, detail.data, selection, withForceConfirm]);
 
   if (detail.isLoading) {
     return <p className="p-6 text-neutral-500">Lade Trackliste …</p>;
@@ -171,7 +176,7 @@ export default function Workspace({ playlistId }: Props) {
       const block = blockById.get(track.blockId);
       if (block) {
         rows.push(
-          <BlockGroup key={block.id} block={block} onChange={applyDetail} withForceConfirm={withForceConfirm} />,
+          <BlockGroup key={block.id} block={block} onChange={applyDetail} />,
         );
       }
     }
@@ -180,7 +185,7 @@ export default function Workspace({ playlistId }: Props) {
   for (const block of data.blocks) {
     if (!rendered.has(block.id)) {
       rows.push(
-        <BlockGroup key={block.id} block={block} onChange={applyDetail} withForceConfirm={withForceConfirm} />,
+        <BlockGroup key={block.id} block={block} onChange={applyDetail} />,
       );
     }
   }

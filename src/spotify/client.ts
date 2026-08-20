@@ -43,6 +43,17 @@ export class SpotifyApiError extends ApiError {
   }
 }
 
+/** Retry-After kann Sekunden oder ein HTTP-Datum sein (RFC 9110); auf 1–30 s begrenzen. */
+function parseRetryAfterMs(header: string | null): number {
+  let seconds = Number(header ?? '');
+  if (!Number.isFinite(seconds) && header) {
+    const date = Date.parse(header);
+    if (Number.isFinite(date)) seconds = (date - Date.now()) / 1000;
+  }
+  if (!Number.isFinite(seconds)) seconds = 2;
+  return Math.min(Math.max(seconds, 1), 30) * 1000;
+}
+
 export class SpotifyClient {
   private refreshPromise: Promise<void> | null = null;
 
@@ -50,10 +61,6 @@ export class SpotifyClient {
 
   getAuth(): AuthRow | null {
     return (this.db.prepare('SELECT * FROM auth WHERE id = 1').get() as AuthRow | undefined) ?? null;
-  }
-
-  isAuthenticated(): boolean {
-    return this.getAuth() !== null;
   }
 
   saveTokens(tokens: {
@@ -127,6 +134,9 @@ export class SpotifyClient {
       refresh_token: auth.refresh_token,
     });
     const tokens = await this.tokenRequest(body);
+    // Hat sich der Nutzer während des laufenden Refreshs abgemeldet, dürfen die
+    // neuen Tokens die gelöschte Session nicht wiederbeleben.
+    if (!this.getAuth()) throw notAuthenticated();
     this.saveTokens({
       access_token: tokens.access_token,
       // Spotify rotiert den Refresh-Token gelegentlich; sonst den alten behalten.
@@ -200,9 +210,7 @@ export class SpotifyClient {
       }
       if (res.status === 429 && rateLimitRetries < MAX_RATE_LIMIT_RETRIES) {
         rateLimitRetries++;
-        const retryAfter = Number(res.headers.get('retry-after') ?? '1');
-        const waitMs = Math.min(Math.max(retryAfter, 1), 30) * 1000;
-        await new Promise((r) => setTimeout(r, waitMs));
+        await new Promise((r) => setTimeout(r, parseRetryAfterMs(res.headers.get('retry-after'))));
         continue;
       }
       if (!res.ok) {

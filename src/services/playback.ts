@@ -20,7 +20,7 @@ function toUris(trackIds: string[]): string[] {
 }
 
 /** Übersetzt Player-Fehler in verständliche Meldungen (403 = kein Premium, 404 = kein Gerät). */
-function mapPlayerError(err: unknown): never {
+export function mapPlayerError(err: unknown): never {
   if (err instanceof SpotifyApiError) {
     if (err.status === 403) throw noPremium();
     if (err.status === 404) throw noActiveDevice();
@@ -98,32 +98,30 @@ export async function startPlayback(
 
   const deviceQuery = args.deviceId ? { device_id: args.deviceId } : {};
 
+  let shadowId: string | undefined;
+  let playBody: Record<string, unknown>;
   if (mode === 'shadow') {
-    const shadowId = await ensureShadowPlaylist(db, spotify, args.playlistId, args.playlistName);
+    shadowId = await ensureShadowPlaylist(db, spotify, args.playlistId, args.playlistName);
     await replaceShadowItems(spotify, shadowId, toUris(trackIds));
-    try {
-      // Zwingend: sonst würfelt Spotify die berechnete Reihenfolge wieder durcheinander.
-      await spotify.request('/me/player/shuffle', { method: 'PUT', query: { state: false, ...deviceQuery } });
-      await spotify.request('/me/player/play', {
-        method: 'PUT',
-        query: deviceQuery,
-        body: { context_uri: `spotify:playlist:${shadowId}`, offset: { position: 0 }, position_ms: 0 },
-      });
-    } catch (err) {
-      mapPlayerError(err);
-    }
-    return { mode, shadowPlaylistId: shadowId };
+    playBody = { context_uri: `spotify:playlist:${shadowId}`, offset: { position: 0 }, position_ms: 0 };
+  } else {
+    playBody = { uris: toUris(trackIds), position_ms: 0 };
   }
 
   try {
+    if (args.deviceId) {
+      // Ein explizit gewähltes, aber inaktives Gerät beantwortet Player-Kommandos
+      // mit 404 — deshalb zuerst die Wiedergabe dorthin übertragen.
+      await spotify.request('/me/player', {
+        method: 'PUT',
+        body: { device_ids: [args.deviceId], play: false },
+      });
+    }
+    // Zwingend: sonst würfelt Spotify die berechnete Reihenfolge wieder durcheinander.
     await spotify.request('/me/player/shuffle', { method: 'PUT', query: { state: false, ...deviceQuery } });
-    await spotify.request('/me/player/play', {
-      method: 'PUT',
-      query: deviceQuery,
-      body: { uris: toUris(trackIds), position_ms: 0 },
-    });
+    await spotify.request('/me/player/play', { method: 'PUT', query: deviceQuery, body: playBody });
   } catch (err) {
     mapPlayerError(err);
   }
-  return { mode };
+  return { mode, shadowPlaylistId: shadowId };
 }
