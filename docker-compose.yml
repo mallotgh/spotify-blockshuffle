@@ -1,0 +1,13 @@
+services:
+  blockshuffle:
+    build: .
+    container_name: spotify-blockshuffle
+    ports:
+      - "8973:8973"
+    environment:
+      SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID}
+      SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET}
+      SPOTIFY_REDIRECT_URI: ${SPOTIFY_REDIRECT_URI}
+    volumes:
+      - ./config:/config
+    restart: unless-stopped
