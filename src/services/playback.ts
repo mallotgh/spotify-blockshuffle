@@ -1,7 +1,7 @@
 import type { DB } from '../db.js';
 import { SpotifyClient, SpotifyApiError } from '../spotify/client.js';
-import { createdPlaylistSchema, snapshotSchema } from '../spotify/schemas.js';
-import { noPremium, noActiveDevice } from '../errors.js';
+import { createdPlaylistSchema, snapshotSchema, devicesResponseSchema } from '../spotify/schemas.js';
+import { ApiError, noPremium, noActiveDevice } from '../errors.js';
 
 /** Bis zu dieser Länge wird direkt per URI-Liste abgespielt (Weg B). */
 export const DIRECT_URI_LIMIT = 90;
@@ -19,10 +19,21 @@ function toUris(trackIds: string[]): string[] {
   return trackIds.map((id) => `spotify:track:${id}`);
 }
 
-/** Übersetzt Player-Fehler in verständliche Meldungen (403 = kein Premium, 404 = kein Gerät). */
+/**
+ * Übersetzt Player-Fehler in verständliche Meldungen. 403 heißt nur bei
+ * reason=PREMIUM_REQUIRED wirklich "kein Premium" — sonst ist es eine
+ * Player-Restriktion (z. B. Kommando an ein Gerät ohne laufende Wiedergabe).
+ */
 export function mapPlayerError(err: unknown): never {
   if (err instanceof SpotifyApiError) {
-    if (err.status === 403) throw noPremium();
+    if (err.status === 403) {
+      if (err.reason === 'PREMIUM_REQUIRED') throw noPremium();
+      throw new ApiError(
+        409,
+        'player_restriction',
+        `Spotify lehnt das Player-Kommando ab (${err.reason ?? 'Einschränkung'}). Meist hilft: In der Spotify-App auf dem Zielgerät kurz Play/Pause tippen und es erneut versuchen.`,
+      );
+    }
     if (err.status === 404) throw noActiveDevice();
   }
   throw err;
@@ -96,8 +107,6 @@ export async function startPlayback(
         ? 'uris'
         : 'shadow';
 
-  const deviceQuery = args.deviceId ? { device_id: args.deviceId } : {};
-
   let shadowId: string | undefined;
   let playBody: Record<string, unknown>;
   if (mode === 'shadow') {
@@ -109,19 +118,65 @@ export async function startPlayback(
   }
 
   try {
-    if (args.deviceId) {
-      // Ein explizit gewähltes, aber inaktives Gerät beantwortet Player-Kommandos
-      // mit 404 — deshalb zuerst die Wiedergabe dorthin übertragen.
-      await spotify.request('/me/player', {
-        method: 'PUT',
-        body: { device_ids: [args.deviceId], play: false },
-      });
-    }
-    // Zwingend: sonst würfelt Spotify die berechnete Reihenfolge wieder durcheinander.
-    await spotify.request('/me/player/shuffle', { method: 'PUT', query: { state: false, ...deviceQuery } });
-    await spotify.request('/me/player/play', { method: 'PUT', query: deviceQuery, body: playBody });
+    await issuePlayerCommands(spotify, args.deviceId, playBody);
   } catch (err) {
+    // Kein aktives Gerät und keins explizit gewählt: aufs aktive bzw. einzige
+    // bekannte Gerät ausweichen (deckt "Spotify ist offen, aber idle" ab).
+    if (err instanceof SpotifyApiError && err.status === 404 && !args.deviceId) {
+      const fallbackId = await findFallbackDevice(spotify);
+      if (fallbackId) {
+        try {
+          await issuePlayerCommands(spotify, fallbackId, playBody);
+          return { mode, shadowPlaylistId: shadowId };
+        } catch (err2) {
+          mapPlayerError(err2);
+        }
+      }
+    }
     mapPlayerError(err);
   }
   return { mode, shadowPlaylistId: shadowId };
+}
+
+async function issuePlayerCommands(
+  spotify: SpotifyClient,
+  deviceId: string | undefined,
+  playBody: Record<string, unknown>,
+): Promise<void> {
+  const deviceQuery = deviceId ? { device_id: deviceId } : {};
+  if (deviceId) {
+    // Ein explizit gewähltes, aber inaktives Gerät beantwortet Player-Kommandos
+    // mit 404 — deshalb zuerst die Wiedergabe dorthin übertragen.
+    await spotify.request('/me/player', {
+      method: 'PUT',
+      body: { device_ids: [deviceId], play: false },
+    });
+  }
+  // Zwingend: sonst würfelt Spotify die berechnete Reihenfolge wieder durcheinander.
+  // Geräte ohne laufende Wiedergabe lehnen das Kommando teils mit 403/404 ab —
+  // dann nach dem Play erneut versuchen.
+  const shuffleOff = () =>
+    spotify.request('/me/player/shuffle', { method: 'PUT', query: { state: false, ...deviceQuery } });
+  try {
+    await shuffleOff();
+  } catch (err) {
+    if (!(err instanceof SpotifyApiError && (err.status === 403 || err.status === 404))) throw err;
+  }
+  await spotify.request('/me/player/play', { method: 'PUT', query: deviceQuery, body: playBody });
+  try {
+    await shuffleOff();
+  } catch {
+    // Bleibt Shuffle an, warnt die Statusleiste.
+  }
+}
+
+async function findFallbackDevice(spotify: SpotifyClient): Promise<string | null> {
+  try {
+    const res = await spotify.requestParsed(devicesResponseSchema, '/me/player/devices');
+    const devices = res.devices.filter((d) => d.id !== null && !d.is_restricted);
+    const candidate = devices.find((d) => d.is_active) ?? (devices.length === 1 ? devices[0] : undefined);
+    return candidate?.id ?? null;
+  } catch {
+    return null;
+  }
 }

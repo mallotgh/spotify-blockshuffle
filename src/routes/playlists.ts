@@ -121,7 +121,7 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
         `SELECT p.*, (SELECT COUNT(*) FROM blocks b WHERE b.playlist_id = p.id) AS block_count
          FROM playlists p
          WHERE p.stale = 0 AND p.id NOT IN (SELECT shadow_playlist_id FROM shadow_playlists)
-         ORDER BY p.name COLLATE NOCASE`,
+         ORDER BY (block_count > 0) DESC, p.name COLLATE NOCASE`,
       )
       .all() as (PlaylistRow & { block_count: number })[];
     return {

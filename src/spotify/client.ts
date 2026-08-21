@@ -37,8 +37,10 @@ export class SpotifyApiError extends ApiError {
     public status: number,
     message: string,
     public endpoint: string,
+    /** Spotify-Fehlergrund bei Player-Endpunkten, z. B. PREMIUM_REQUIRED oder NO_ACTIVE_DEVICE. */
+    public reason?: string,
   ) {
-    super(status >= 500 ? 502 : status, 'spotify_api_error', message, { endpoint, status });
+    super(status >= 500 ? 502 : status, 'spotify_api_error', message, { endpoint, status, reason });
     this.name = 'SpotifyApiError';
   }
 }
@@ -216,13 +218,15 @@ export class SpotifyClient {
       if (!res.ok) {
         const text = await res.text().catch(() => '');
         let message = `Spotify-API ${opts.method ?? 'GET'} ${path}: HTTP ${res.status}`;
+        let reason: string | undefined;
         try {
-          const parsed = JSON.parse(text) as { error?: { message?: string } };
+          const parsed = JSON.parse(text) as { error?: { message?: string; reason?: string } };
           if (parsed.error?.message) message += ` – ${parsed.error.message}`;
+          reason = parsed.error?.reason;
         } catch {
           /* Rohtext ignorieren */
         }
-        throw new SpotifyApiError(res.status, message, path);
+        throw new SpotifyApiError(res.status, message, path, reason);
       }
       if (res.status === 204) return null;
       const text = await res.text();

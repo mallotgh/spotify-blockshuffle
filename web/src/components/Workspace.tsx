@@ -12,9 +12,10 @@ export function formatDuration(ms: number): string {
 
 interface Props {
   playlistId: string;
+  onBack: () => void;
 }
 
-export default function Workspace({ playlistId }: Props) {
+export default function Workspace({ playlistId, onBack }: Props) {
   const toast = useToast();
   const queryClient = useQueryClient();
   const detail = useQuery({
@@ -143,6 +144,12 @@ export default function Workspace({ playlistId }: Props) {
   if (!data.playlist.itemsReadable) {
     return (
       <div className="p-6">
+        <button
+          onClick={onBack}
+          className="mb-2 rounded px-2 py-1 text-neutral-400 hover:bg-neutral-800 md:hidden"
+        >
+          ← Zurück
+        </button>
         <h2 className="text-xl font-bold">{data.playlist.name}</h2>
         <p className="mt-4 max-w-lg rounded-lg border border-amber-800 bg-amber-950/40 p-4 text-sm text-amber-200">
           Für fremde (nur gefolgte) Playlists liefert Spotify seit Februar 2026 keine Tracklisten
@@ -200,7 +207,14 @@ export default function Workspace({ playlistId }: Props) {
   return (
     <div className="p-4">
       <div className="mb-3 flex items-center gap-3">
-        <h2 className="text-xl font-bold">{data.playlist.name}</h2>
+        <button
+          onClick={onBack}
+          title="Zurück zur Playlist-Liste"
+          className="rounded px-2 py-1 text-neutral-400 hover:bg-neutral-800 md:hidden"
+        >
+          ←
+        </button>
+        <h2 className="min-w-0 truncate text-xl font-bold">{data.playlist.name}</h2>
         <span className="text-sm text-neutral-500">
           {data.tracks.length} Tracks · {data.blocks.length} Blöcke
         </span>

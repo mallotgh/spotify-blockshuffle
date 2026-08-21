@@ -117,10 +117,13 @@ function MainApp({ displayName }: { displayName: string }) {
         onLogout={logout}
       />
       <div className="flex min-h-0 flex-1">
-        <PlaylistSidebar selectedId={playlistId} onSelect={setPlaylistId} />
-        <main className="min-w-0 flex-1 overflow-y-auto">
+        {/* Mobil: entweder Liste oder Arbeitsbereich; ab md beides nebeneinander */}
+        <div className={`${playlistId ? 'hidden md:flex' : 'flex'} w-full md:w-80`}>
+          <PlaylistSidebar selectedId={playlistId} onSelect={setPlaylistId} />
+        </div>
+        <main className={`${playlistId ? 'block' : 'hidden md:block'} min-w-0 flex-1 overflow-y-auto`}>
           {playlistId ? (
-            <Workspace playlistId={playlistId} />
+            <Workspace playlistId={playlistId} onBack={() => setPlaylistId(null)} />
           ) : (
             <Center>Wähle links eine Playlist aus.</Center>
           )}

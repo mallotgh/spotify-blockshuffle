@@ -15,7 +15,7 @@ export default function PlaylistSidebar({ selectedId, onSelect }: Props) {
   };
 
   return (
-    <aside className="flex w-80 shrink-0 flex-col border-r border-neutral-800 bg-neutral-900/60">
+    <aside className="flex w-full flex-col border-r border-neutral-800 bg-neutral-900/60 md:w-80 md:shrink-0">
       <div className="flex items-center justify-between px-4 py-3">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-400">Playlists</h2>
         <button
