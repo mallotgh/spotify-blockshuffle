@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { DB } from '../db.js';
 import { SpotifyClient, SpotifyApiError } from '../spotify/client.js';
 import { createdPlaylistSchema, snapshotSchema, devicesResponseSchema } from '../spotify/schemas.js';
@@ -112,7 +113,16 @@ export async function startPlayback(
   if (mode === 'shadow') {
     shadowId = await ensureShadowPlaylist(db, spotify, args.playlistId, args.playlistName);
     await replaceShadowItems(spotify, shadowId, toUris(trackIds));
-    playBody = { context_uri: `spotify:playlist:${shadowId}`, offset: { position: 0 }, position_ms: 0 };
+    // Der Playback-Dienst hängt dem Playlist-Update teils ein paar Sekunden
+    // hinterher: erst prüfen, dass der neue Stand lesbar ist, und den Start
+    // über die URI des ersten Tracks statt über Position 0 setzen — sonst
+    // spielt zuerst noch der alte erste Track.
+    await waitForShadowUpdate(spotify, shadowId, trackIds[0]!);
+    playBody = {
+      context_uri: `spotify:playlist:${shadowId}`,
+      offset: { uri: `spotify:track:${trackIds[0]!}` },
+      position_ms: 0,
+    };
   } else {
     playBody = { uris: toUris(trackIds), position_ms: 0 };
   }
@@ -167,6 +177,29 @@ async function issuePlayerCommands(
     await shuffleOff();
   } catch {
     // Bleibt Shuffle an, warnt die Statusleiste.
+  }
+}
+
+const shadowFirstItemSchema = z.object({
+  items: z.array(z.object({ item: z.object({ id: z.string().nullable() }).nullable() })),
+});
+
+/** Wartet (best effort), bis die Shadow-Playlist den neuen ersten Track meldet. */
+async function waitForShadowUpdate(
+  spotify: SpotifyClient,
+  shadowId: string,
+  expectedFirstTrackId: string,
+): Promise<void> {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      const page = await spotify.requestParsed(shadowFirstItemSchema, `/playlists/${shadowId}/items`, {
+        query: { limit: 1, fields: 'items(item(id))' },
+      });
+      if (page.items[0]?.item?.id === expectedFirstTrackId) return;
+    } catch {
+      // kurz warten und erneut versuchen
+    }
+    await new Promise((r) => setTimeout(r, 400));
   }
 }
 
